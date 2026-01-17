@@ -79,47 +79,32 @@ public class SeckillVoucherServiceImpl extends ServiceImpl<SeckillVoucherMapper,
         if(beginTime.isAfter(LocalDateTime.now()) || endTime.isBefore(LocalDateTime.now())){
             return Result.fail("不在活动时间范围内");
         }
-//        Long result = stringRedisTemplate.execute(
-//                SECKILL_SCRIPT,
-//                Collections.emptyList(),
-//                voucherId.toString(), userId.toString()
-//        );
-
-        RLock lock = redissonClient.getLock("seckill:lock" + voucherId);
-        try {
-            boolean isLock = lock.tryLock(1, 10, TimeUnit.SECONDS);
-            if(!isLock){
-                return Result.fail("系统繁忙，请稍后再试");
-            }
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+        Long result = stringRedisTemplate.execute(
+                SECKILL_SCRIPT,
+                Collections.emptyList(),
+                voucherId.toString(), userId.toString()
+        );
+        if (result == null) {
+            return Result.fail("系统异常，请稍后重试");
         }
-        try {
-            String stock = stringRedisTemplate.opsForValue().get("seckill:stock:" + voucherId);
-            Integer stockNum = Integer.valueOf(stock);
-            if(stockNum <= 0){
-                return Result.fail("当前无库存");
-            }
-            Boolean isMember = stringRedisTemplate.opsForSet().isMember("seckill:order:" + voucherId, userId.toString());
-            if(isMember){
-                return Result.fail("您已购买该优惠券");
-            }
-            stockNum = stockNum - 1;
-            stringRedisTemplate.opsForValue().set("seckill:stock:" + voucherId,stockNum.toString());
-            stringRedisTemplate.opsForSet().add("seckill:order:" + voucherId,userId.toString());
-            Long orderId = redisIdWorker.nextId("order");
-            Map<String,Long> voucherDetail = new HashMap<>();
-            voucherDetail.put("voucherId", voucherId);
-            voucherDetail.put("orderId", orderId);
-            voucherDetail.put("userId", userId);
+
+        if (result == 1) {
+            return Result.fail("当前无库存");
+        } else if (result == 2) {
+            return Result.fail("您已购买该优惠券");
+        }
+        Long orderId = redisIdWorker.nextId("order");
+        Map<String,Long> voucherDetail = new HashMap<>();
+        voucherDetail.put("voucherId", voucherId);
+        voucherDetail.put("orderId", orderId);
+        voucherDetail.put("userId", userId);
+        try{
             rocketMQTemplate.syncSend("orderTopic",MessageBuilder.withPayload(voucherDetail).build());
             return Result.ok(orderId);
         }catch (Exception e){
             stringRedisTemplate.opsForValue().increment("seckill:stock:" + voucherId);
             stringRedisTemplate.opsForSet().remove("seckill:order:" + voucherId, userId.toString());
             return Result.fail("系统繁忙，请重试");
-        }finally {
-            lock.unlock();
         }
     }
 }
