@@ -1,6 +1,7 @@
 package com.hmdp.service.impl;
 
 import cn.hutool.json.JSONUtil;
+import com.hmdp.config.RedisClient;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
 import com.hmdp.entity.VoucherOrder;
@@ -11,7 +12,10 @@ import com.hmdp.service.IVoucherOrderService;
 import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
+import lombok.SneakyThrows;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -24,6 +28,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -44,6 +49,9 @@ public class SeckillVoucherServiceImpl extends ServiceImpl<SeckillVoucherMapper,
 
     @Autowired
     private RocketMQTemplate rocketMQTemplate;
+
+    @Autowired
+    private RedissonClient redissonClient;
 
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
     static {
@@ -71,27 +79,47 @@ public class SeckillVoucherServiceImpl extends ServiceImpl<SeckillVoucherMapper,
         if(beginTime.isAfter(LocalDateTime.now()) || endTime.isBefore(LocalDateTime.now())){
             return Result.fail("不在活动时间范围内");
         }
-        Long result = stringRedisTemplate.execute(
-                SECKILL_SCRIPT,
-                Collections.emptyList(),
-                voucherId.toString(), userId.toString()
-        );
-        Integer r = Integer.valueOf(result.toString());
-        if(r != 0){
-            return Result.fail(r == 1 ? "库存不足" : "禁止重复下单");
-        }
-        Long orderId = redisIdWorker.nextId("order");
-        Map<String,Long> voucherDetail = new HashMap<>();
-        voucherDetail.put("voucherId", voucherId);
-        voucherDetail.put("orderId", orderId);
-        voucherDetail.put("userId", userId);
+//        Long result = stringRedisTemplate.execute(
+//                SECKILL_SCRIPT,
+//                Collections.emptyList(),
+//                voucherId.toString(), userId.toString()
+//        );
+
+        RLock lock = redissonClient.getLock("seckill:lock" + voucherId);
         try {
+            boolean isLock = lock.tryLock(1, 10, TimeUnit.SECONDS);
+            if(!isLock){
+                return Result.fail("系统繁忙，请稍后再试");
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        try {
+            String stock = stringRedisTemplate.opsForValue().get("seckill:stock:" + voucherId);
+            Integer stockNum = Integer.valueOf(stock);
+            if(stockNum <= 0){
+                return Result.fail("当前无库存");
+            }
+            Boolean isMember = stringRedisTemplate.opsForSet().isMember("seckill:order:" + voucherId, userId.toString());
+            if(isMember){
+                return Result.fail("您已购买该优惠券");
+            }
+            stockNum = stockNum - 1;
+            stringRedisTemplate.opsForValue().set("seckill:stock:" + voucherId,stockNum.toString());
+            stringRedisTemplate.opsForSet().add("seckill:order:" + voucherId,userId.toString());
+            Long orderId = redisIdWorker.nextId("order");
+            Map<String,Long> voucherDetail = new HashMap<>();
+            voucherDetail.put("voucherId", voucherId);
+            voucherDetail.put("orderId", orderId);
+            voucherDetail.put("userId", userId);
             rocketMQTemplate.syncSend("orderTopic",MessageBuilder.withPayload(voucherDetail).build());
             return Result.ok(orderId);
         }catch (Exception e){
             stringRedisTemplate.opsForValue().increment("seckill:stock:" + voucherId);
             stringRedisTemplate.opsForSet().remove("seckill:order:" + voucherId, userId.toString());
             return Result.fail("系统繁忙，请重试");
+        }finally {
+            lock.unlock();
         }
     }
 }
