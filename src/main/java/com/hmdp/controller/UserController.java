@@ -3,7 +3,7 @@ package com.hmdp.controller;
 
 import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
-import com.hmdp.dto.UserDTO;
+import com.hmdp.entity.User;
 import com.hmdp.entity.UserInfo;
 import com.hmdp.service.IUserInfoService;
 import com.hmdp.service.IUserService;
@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * <p>
@@ -37,10 +39,16 @@ public class UserController {
     @Resource
     private IUserInfoService userInfoService;
 
+
+    @GetMapping("/show")
+    public Result show(){
+        return userService.show();
+    }
+
     /**
      * 发送手机验证码
      */
-    @PostMapping("code")
+    @PostMapping("/code")
     @ApiOperation("发送验证码")
     public Result sendCode(@RequestParam("phone") String phone, HttpSession session) {
         return userService.sendCode(phone, session);
@@ -56,6 +64,11 @@ public class UserController {
         return userService.login(loginForm, session);
     }
 
+    @PostMapping("/setPassword")
+    public Result setPassword(@RequestParam String password,@RequestParam String phone,@RequestParam String code){
+        return userService.setPassword(phone,password,code);
+    }
+
     /**
      * 登出功能
      * @return 无
@@ -69,40 +82,44 @@ public class UserController {
     @GetMapping("/me")
     @ApiOperation("查看当前用户界面")
     public Result me(){
-        UserDTO user = UserHolder.getUser();
-        return Result.ok(user);
-    }
-
-    @GetMapping("/info/{id}")
-    @ApiOperation("根据id查询用户")
-    public Result info(@PathVariable("id") Long userId){
-        // 查询详情
-        UserInfo info = userInfoService.getById(userId);
-        if (info == null) {
-            // 没有详情，应该是第一次查看详情
-            return Result.ok();
-        }
-        info.setCreateTime(null);
-        info.setUpdateTime(null);
-        // 返回
-        return Result.ok(info);
+        User user = userService.getById(UserHolder.getUser().getId());
+        UserInfo userInfo = userInfoService.getById(UserHolder.getUser().getId());
+        Map<String,Object> map = new HashMap<>();
+        map.put("user",user);
+        map.put("userInfo",userInfo);
+        return Result.ok(map);
     }
 
     @GetMapping("/{id}")
     @ApiOperation("根据id查询用户信息")
     public Result getUserInfo(@PathVariable("id") Long id){
+        if(UserHolder.getUser().getId().equals(id)){
+            return Result.fail("");
+        }
+        User user = userService.getById(id);
+        UserInfo userInfo = userInfoService.getById(UserHolder.getUser().getId());
+        Map<String,Object> map = new HashMap<>();
+        map.put("user",user);
+        map.put("userInfo",userInfo);
+        return Result.ok(map);
+    }
+
+//    @PostMapping("/sign")
+//    @ApiOperation("用户打卡")
+//    public Result sign(){
+//        return userService.sign();
+//    }
+//
+//    @GetMapping("/sign/count")
+//    @ApiOperation("当前连续打卡天数")
+//    public Result signCount(){
+//        return userService.signCount();
+//    }
+
+    @GetMapping("/show/{id}")
+    public Result showUserInfo(@PathVariable("id") Long id){
         return userService.getUserInfo(id);
     }
 
-    @PostMapping("/sign")
-    @ApiOperation("用户打卡")
-    public Result sign(){
-        return userService.sign();
-    }
 
-    @GetMapping("/sign/count")
-    @ApiOperation("当前连续打卡天数")
-    public Result signCount(){
-        return userService.signCount();
-    }
 }

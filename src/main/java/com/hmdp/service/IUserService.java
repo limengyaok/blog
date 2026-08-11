@@ -27,7 +27,13 @@ public interface IUserService extends IService<User> {
 
     Result getUserInfo(Long id);
 
-    Result sign();
+//    Result sign();
+//
+//    Result signCount();
 
-    Result signCount();
+    Result show();
+
+    Result setPassword(String phone,String password,String code);
+
+
 }

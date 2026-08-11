@@ -20,4 +20,6 @@ public interface IShopService extends IService<Shop> {
 
     Result queryByType(Integer typeId, Integer current, Double x, Double y);
 
+    Result searchShop(String keyword);
+
 }

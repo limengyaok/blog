@@ -35,7 +35,6 @@ public class RedisIdWorker {
         String date = now.format(DateTimeFormatter.ofPattern("yyyy:MM:dd"));
         // 2.2.自增长
         long count = stringRedisTemplate.opsForValue().increment("icr:" + keyPrefix + ":" + date);
-
         // 3.拼接并返回
         return timestamp << COUNT_BITS | count;
     }

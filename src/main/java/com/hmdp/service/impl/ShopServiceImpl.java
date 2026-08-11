@@ -171,4 +171,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             throw new RuntimeException(e);
         }
     }
+
+    @Override
+    public Result searchShop(String keyword) {
+        return null;
+    }
 }

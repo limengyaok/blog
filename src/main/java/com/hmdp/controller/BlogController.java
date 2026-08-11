@@ -38,6 +38,7 @@ public class BlogController {
     @PostMapping
     @ApiOperation("添加博客")
     public Result saveBlog(@RequestBody Blog blog) {
+        blog.setShopId(1L);
         return blogService.saveBlog(blog);
     }
 

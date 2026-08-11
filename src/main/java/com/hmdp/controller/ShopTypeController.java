@@ -25,7 +25,7 @@ public class ShopTypeController {
     @Resource
     private IShopTypeService typeService;
 
-    @GetMapping("list")
+    @GetMapping("/list")
     public Result queryTypeList() {
         List<ShopType> typeList = typeService.queryByType();
         return Result.ok(typeList);
